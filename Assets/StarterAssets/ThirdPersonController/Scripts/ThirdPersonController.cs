@@ -14,15 +14,15 @@ namespace StarterAssets
 #endif
     public class ThirdPersonController : MonoBehaviour
     {
-        [Header("Player")]
-        [Tooltip("Move speed of the character in m/s")]
+        [Header("Player")] [Tooltip("Move speed of the character in m/s")]
         public float MoveSpeed = 2.0f;
+
+        [Header(("攻击间隔时间"))] public float AttackTime;
 
         [Tooltip("Sprint speed of the character in m/s")]
         public float SprintSpeed = 5.335f;
 
-        [Tooltip("How fast the character turns to face movement direction")]
-        [Range(0.0f, 0.3f)]
+        [Tooltip("How fast the character turns to face movement direction")] [Range(0.0f, 0.3f)]
         public float RotationSmoothTime = 0.12f;
 
         [Tooltip("Acceleration and deceleration")]
@@ -32,12 +32,10 @@ namespace StarterAssets
         public AudioClip[] FootstepAudioClips;
         [Range(0, 1)] public float FootstepAudioVolume = 0.5f;
 
-        [Space(10)]
-        [Tooltip("The height the player can jump")]
+        [Space(10)] [Tooltip("The height the player can jump")]
         public float JumpHeight = 1.2f;
 
-        [Tooltip("The character uses its own gravity value. The engine default is -9.81f")]
-        public float Gravity = -15.0f;
+        [Tooltip("角色自己的重力.  其默认值是 -9.81f")] public float Gravity = -15.0f;
 
         [Space(10)]
         [Tooltip("Time required to pass before being able to jump again. Set to 0f to instantly jump again")]
@@ -50,8 +48,7 @@ namespace StarterAssets
         [Tooltip("If the character is grounded or not. Not part of the CharacterController built in grounded check")]
         public bool Grounded = true;
 
-        [Tooltip("Useful for rough ground")]
-        public float GroundedOffset = -0.14f;
+        [Tooltip("Useful for rough ground")] public float GroundedOffset = -0.14f;
 
         [Tooltip("The radius of the grounded check. Should match the radius of the CharacterController")]
         public float GroundedRadius = 0.28f;
@@ -75,6 +72,8 @@ namespace StarterAssets
         [Tooltip("For locking the camera position on all axis")]
         public bool LockCameraPosition = false;
 
+        private AnimatorStateInfo stateInfo;
+
         // cinemachine
         private float _cinemachineTargetYaw;
         private float _cinemachineTargetPitch;
@@ -86,10 +85,13 @@ namespace StarterAssets
         private float _rotationVelocity;
         private float _verticalVelocity;
         private float _terminalVelocity = 53.0f;
+        private int _action = 1;
+        private float _time;
 
         // timeout deltatime
         private float _jumpTimeoutDelta;
         private float _fallTimeoutDelta;
+
 
         // animation IDs
         private int _animIDSpeed;
@@ -97,6 +99,13 @@ namespace StarterAssets
         private int _animIDJump;
         private int _animIDFreeFall;
         private int _animIDMotionSpeed;
+        private int _animIDAction;
+        private int _animIDWeapon;
+        private int _animIDTrigger;
+        private int _animIDIsAttack;
+        
+        
+
 
 #if ENABLE_INPUT_SYSTEM && STARTER_ASSETS_PACKAGES_CHECKED
         private UnityEngine.InputSystem.PlayerInput _playerInput;
@@ -121,7 +130,8 @@ namespace StarterAssets
 #endif
             }
         }
-
+        
+        
 
         private void Awake()
         {
@@ -135,7 +145,6 @@ namespace StarterAssets
         private void Start()
         {
             _cinemachineTargetYaw = CinemachineCameraTarget.transform.rotation.eulerAngles.y;
-            
             _hasAnimator = TryGetComponent(out _animator);
             _controller = GetComponent<CharacterController>();
             _input = GetComponent<StarterAssetsInputs>();
@@ -155,10 +164,33 @@ namespace StarterAssets
         private void Update()
         {
             _hasAnimator = TryGetComponent(out _animator);
-
             JumpAndGravity();
             GroundedCheck();
-            Move();
+            
+            if (!_input.attack && CurrentAnimationPlayProgress())
+            {
+                Move();
+            }
+
+
+            if (_time <= AttackTime)
+            {
+                _time += Time.deltaTime;
+            }
+
+            if (_input.attack)
+            {
+                if (_time >= AttackTime)
+                {
+                    _action = 1;
+                }
+                else
+                {
+                    _action++;
+                }
+
+                Attack();
+            }
         }
 
         private void LateUpdate()
@@ -173,6 +205,10 @@ namespace StarterAssets
             _animIDJump = Animator.StringToHash("Jump");
             _animIDFreeFall = Animator.StringToHash("FreeFall");
             _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
+            _animIDAction = Animator.StringToHash("Action");
+            _animIDWeapon = Animator.StringToHash("Weapon");
+            _animIDTrigger = Animator.StringToHash("Trigger");
+            _animIDIsAttack = Animator.StringToHash("IsAttack");
         }
 
         private void GroundedCheck()
@@ -209,6 +245,24 @@ namespace StarterAssets
             // Cinemachine will follow this target
             CinemachineCameraTarget.transform.rotation = Quaternion.Euler(_cinemachineTargetPitch + CameraAngleOverride,
                 _cinemachineTargetYaw, 0.0f);
+        }
+
+        private void Attack()
+        {
+            _animator.SetFloat(_animIDSpeed, 0);
+            _animator.SetBool(_animIDIsAttack, true);
+            _animator.SetInteger(_animIDWeapon, 0);
+            _animator.SetInteger(_animIDAction, _action);
+            _animator.SetTrigger(_animIDTrigger);
+            _time = AttackTime;
+        }
+
+        private bool CurrentAnimationPlayProgress()
+        {
+            stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+            bool isMove = stateInfo.IsName("Base Layer.Attack.Attacks.Attacks");
+            isMove = isMove || stateInfo.IsName("Base Layer.Attack.Attacks.Attack-L1");
+            return !isMove;
         }
 
         private void Move()
@@ -303,6 +357,7 @@ namespace StarterAssets
                 if (_input.jump && _jumpTimeoutDelta <= 0.0f)
                 {
                     // the square root of H * -2 * G = how much velocity needed to reach desired height
+                    // H(高度) * -2 * G(重力) 的平方根 = 达到所需高度所需的速度
                     _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
 
                     // update animator if using character
@@ -313,6 +368,7 @@ namespace StarterAssets
                 }
 
                 // jump timeout
+                // 跳跃超时
                 if (_jumpTimeoutDelta >= 0.0f)
                 {
                     _jumpTimeoutDelta -= Time.deltaTime;
@@ -342,6 +398,7 @@ namespace StarterAssets
             }
 
             // apply gravity over time if under terminal (multiply by delta time twice to linearly speed up over time)
+            // 如果在终端下，则随时间应用重力（乘以增量时间两次，以随时间线性加速）
             if (_verticalVelocity < _terminalVelocity)
             {
                 _verticalVelocity += Gravity * Time.deltaTime;
@@ -376,7 +433,8 @@ namespace StarterAssets
                 if (FootstepAudioClips.Length > 0)
                 {
                     var index = Random.Range(0, FootstepAudioClips.Length);
-                    AudioSource.PlayClipAtPoint(FootstepAudioClips[index], transform.TransformPoint(_controller.center), FootstepAudioVolume);
+                    AudioSource.PlayClipAtPoint(FootstepAudioClips[index], transform.TransformPoint(_controller.center),
+                        FootstepAudioVolume);
                 }
             }
         }
@@ -385,7 +443,8 @@ namespace StarterAssets
         {
             if (animationEvent.animatorClipInfo.weight > 0.5f)
             {
-                AudioSource.PlayClipAtPoint(LandingAudioClip, transform.TransformPoint(_controller.center), FootstepAudioVolume);
+                AudioSource.PlayClipAtPoint(LandingAudioClip, transform.TransformPoint(_controller.center),
+                    FootstepAudioVolume);
             }
         }
     }
